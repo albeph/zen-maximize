@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.zen-maximize"
+          path="/org/gnome/shell/extensions/zen-maximize/">
+    <key name="is-active" type="b">
+      <default>true</default>
+      <summary>Extension logic is active</summary>
+      <description>If false, the extension pauses its window tracking and UI behaviors.</description>
+    </key>
+  </schema>
+</schemalist>
