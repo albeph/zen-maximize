@@ -11,8 +11,12 @@
 
 Inspired by how macOS elegantly manages full-screen applications, this extension brings that same clean, distraction-free workflow to Linux. Traditional desktop environments pile windows on top of each other. When you maximize an application, it covers your terminal, your unread chats, and your floating windows. This extension solves that by enforcing a more "Zen" desk space. 
 
+![Funzionamento](./_repoFiles/ScreenCast.gif)
+
 * **Maximizing:** When you maximize an application to focus deeply on it, the extension intercepts this event, asks GNOME for a completely new, empty Workspace on the fly (or uses the current one if it's the only app open), and moves the maximized app there. 
 * **Restoring:** When you are done focusing and decide to restore, un-maximize, or close the application, the extension magically teleports the window back to its exact original `(X, Y)` position in the Origin Workspace, destroying the empty temporary workspace. 
+
+
 
 ---
 
@@ -47,6 +51,7 @@ To easily install the extension from the source code, simply clone the repositor
 * **Quick Settings Toggle:** Easily turn the extension's behavior ON or OFF on the fly directly from the GNOME Quick Settings panel.
 * **True Fullscreen Passthrough:** Applications in native fullscreen mode (games, videos, F11) are not intercepted by the extension — they behave exactly as GNOME intends, without interference.
 * **Safe Drag-to-Unmaximize:** Dragging a window down from the title bar to restore it works flawlessly — the extension waits for the grab operation to finish before restoring the window to its original workspace, preventing the window from getting stuck to the cursor.
+* **Smart Workspace Transfers:** When you manually move a maximized Zen window to another desktop, the extension smartly adapts: if the target desktop is empty, it converts it into a new Zen workspace; if it already contains other apps, the window is automatically unmaximized (restored to floating) to avoid covering your existing work.
 
 ---
 

@@ -42,7 +42,7 @@ export function trackWindow(win, windowSignals, states, policy, log) {
     ids.push(win.connect('notify::maximized-vertically', () => queueEvaluate(win, states, windowSignals, policy, log)));
     ids.push(win.connect('notify::fullscreen', () => queueEvaluate(win, states, windowSignals, policy, log)));
     ids.push(win.connect('notify::minimized', () => onMinimizedChanged(win, states, windowSignals, policy, log)));
-    ids.push(win.connect('workspace-changed', () => onWorkspaceChanged(win, states, log)));
+    ids.push(win.connect('workspace-changed', () => onWorkspaceChanged(win, states, policy, log)));
     ids.push(win.connect('size-changed', () => onGeometryChanged(win, states)));
     ids.push(win.connect('position-changed', () => onGeometryChanged(win, states)));
     ids.push(win.connect('unmanaged', () => onUnmanaged(win, windowSignals, states, policy, log)));
@@ -215,7 +215,7 @@ function onMinimizedChanged(win, states, windowSignals, policy, log) {
  * a window onto another Workspace manually, canceling the automatized Fullscreen ecosystem.
  * @private
  */
-function onWorkspaceChanged(win, states, log) {
+function onWorkspaceChanged(win, states, policy, log) {
     const state = states.get(win);
     if (!state)
         return;
@@ -229,17 +229,45 @@ function onWorkspaceChanged(win, states, log) {
     if (!currentWorkspace)
         return;
 
-    if (state.tempWorkspace &&
-        currentWorkspace !== state.tempWorkspace &&
-        !isFullscreenState(win)) {
-        log(`[sig] "${win.get_title()}" movida manualmente → cancelando fullscreen`);
-        cleanupAfterRestore(state, {
-            isTempWorkspace: ws => ws === state.tempWorkspace,
-            unregisterTempWorkspace: () => { },
-            getFixedWorkspaceCount: () => 1,
-            isFixedWorkspace: () => false,
-            syncConfiguredWorkspaceCount: () => { },
-        }, log);
+    // Window is still on its temp workspace — nothing to do
+    if (state.tempWorkspace && currentWorkspace === state.tempWorkspace)
+        return;
+
+    log(`[sig] "${win.get_title()}" moved manually to ws:${currentWorkspace.index()}`);
+
+    // Clean up the old temp workspace
+    const oldTempWs = state.tempWorkspace;
+    cleanupAfterRestore(state, {
+        isTempWorkspace: ws => ws === oldTempWs,
+        unregisterTempWorkspace: () => {},
+        getFixedWorkspaceCount: () => 1,
+        isFixedWorkspace: () => false,
+        syncConfiguredWorkspaceCount: () => {},
+    }, log);
+
+    // If the window is still maximized, decide what to do on the new workspace
+    if (isFullscreenState(win)) {
+        const otherWindows = currentWorkspace.list_windows().filter(w =>
+            w !== win && isInterestingWindow(w) && !w.is_on_all_workspaces()
+        );
+
+        if (otherWindows.length > 0) {
+            // Destination has other apps → unmaximize (restore to floating)
+            log(`[sig] "${win.get_title()}" destination has ${otherWindows.length} window(s) → unmaximizing`);
+            try {
+                win.unmaximize(Meta.MaximizeFlags.BOTH);
+            } catch (_) {}
+        } else {
+            // Destination is empty → re-enter Zen mode
+            log(`[sig] "${win.get_title()}" destination is empty → re-entering Zen`);
+            state.lastFullscreen = false; // Reset so evaluateWindow detects the transition
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+                if (isFullscreenState(win)) {
+                    sendToTempWorkspace(win, state, policy, log);
+                }
+                return GLib.SOURCE_REMOVE;
+            });
+        }
     }
 }
 

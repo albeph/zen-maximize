@@ -128,15 +128,6 @@ export default class ZenMaximizeExtension extends Extension {
         }
         this._dockWasFixed = false;
         this._dockWasNoAutohideFS = false;
-        this._dockOriginalPressure = null;
-        if (this._dockSettings) {
-            try {
-                if (!this._dockSettings.get_boolean('require-pressure-to-show')) {
-                    this._dockOriginalPressure = false;
-                    this._dockSettings.set_boolean('require-pressure-to-show', true);
-                }
-            } catch (_) {}
-        }
         this._panelTimeoutId = 0;
 
         const setPanelStruts = (enabled) => {
@@ -306,28 +297,35 @@ export default class ZenMaximizeExtension extends Extension {
             if (this._policy.isActive && this._policy.isActive() && this._policy.isTempWorkspace(activeWs)) {
                 setPanelStruts(false);
                 // Clear any pending timers
-                if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
-                if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
                 if (this._showTimeoutId) { GLib.Source.remove(this._showTimeoutId); this._showTimeoutId = 0; }
 
-                // Check if the mouse is currently at the top edge
-                let ptrY = -1;
-                try { const [, y] = global.get_pointer(); ptrY = y; } catch (_) {}
-                const panelHeight = Main.panel.height || 32;
+                // If the panel is already visible with an active pointer tracker,
+                // don't reset it — the user is actively using the panel (e.g. scrolling).
+                const panelAlreadyVisible = this._pointerTrackerId && Main.layoutManager.panelBox.translation_y === 0;
 
-                if (ptrY >= 0 && ptrY <= panelHeight) {
-                    // Mouse is on the panel — keep it visible and start the tracker
-                    Main.layoutManager.panelBox.remove_transition('translation_y');
-                    Main.layoutManager.panelBox.translation_y = 0;
-                    easeAllWindowActors(panelHeight, 0);
-                    if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
-                    showTopBar();
-                } else {
-                    // Mouse is away — hide the panel instantly
-                    Main.layoutManager.panelBox.remove_transition('translation_y');
-                    Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
-                    easeAllWindowActors(0, 0);
-                    if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
+                if (!panelAlreadyVisible) {
+                    if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
+                    if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
+
+                    // Check if the mouse is currently at the top edge
+                    let ptrY = -1;
+                    try { const [, y] = global.get_pointer(); ptrY = y; } catch (_) {}
+                    const panelHeight = Main.panel.height || 32;
+
+                    if (ptrY >= 0 && ptrY <= panelHeight) {
+                        // Mouse is on the panel — keep it visible and start the tracker
+                        Main.layoutManager.panelBox.remove_transition('translation_y');
+                        Main.layoutManager.panelBox.translation_y = 0;
+                        easeAllWindowActors(panelHeight, 0);
+                        if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
+                        showTopBar();
+                    } else {
+                        // Mouse is away — hide the panel instantly
+                        Main.layoutManager.panelBox.remove_transition('translation_y');
+                        Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
+                        easeAllWindowActors(0, 0);
+                        if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
+                    }
                 }
 
                 // Force re-maximize windows that opened already maximized.
@@ -528,13 +526,9 @@ export default class ZenMaximizeExtension extends Extension {
                 if (this._dockWasNoAutohideFS) {
                     this._dockSettings.set_boolean('autohide-in-fullscreen', false);
                 }
-                if (this._dockOriginalPressure === false) {
-                    this._dockSettings.set_boolean('require-pressure-to-show', false);
-                }
             } catch (_) {}
             this._dockWasFixed = false;
             this._dockWasNoAutohideFS = false;
-            this._dockOriginalPressure = null;
         }
 
         try {
