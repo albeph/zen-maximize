@@ -1,0 +1,77 @@
+# Italian translations for Zen Maximize
+# Copyright (C) 2024 albeph
+# This file is distributed under the same license as the Zen Maximize package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: zen-maximize@albeph\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2024-01-01 00:00+0000\n"
+"Last-Translator: albeph\n"
+"Language-Team: Italian\n"
+"Language: it\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "General Settings"
+msgstr "Impostazioni Generali"
+
+msgid "Enable Zen Maximize"
+msgstr "Abilita Zen Maximize"
+
+msgid "Temporarily pause all extension behaviors."
+msgstr "Metti temporaneamente in pausa tutti i comportamenti dell'estensione."
+
+msgid "Disable when multiple monitors are connected"
+msgstr "Disattiva se sono presenti schermi multipli"
+
+msgid "Completely disables Zen Maximize when two or more monitors are detected."
+msgstr "Disabilita completamente Zen Maximize se vengono rilevati due o più monitor."
+
+msgid "Force execution even when \"Workspaces on all displays\" is enabled"
+msgstr "Forza l'esecuzione anche quando è abilitata l'opzione \"Spazi di lavoro su tutti i display\""
+
+msgid "Ignore the automatic deactivation and keep the extension running."
+msgstr "Ignora la disattivazione automatica e mantieni attiva l'estensione."
+
+msgid "Why does the extension deactivate automatically?"
+msgstr "Perché l'estensione si disattiva in automatico?"
+
+msgid "Zen Maximize uses GNOME Workspaces to hide the top bar and maximize apps. If you connect a second monitor with \"Workspaces on all displays\" enabled, this conflicts with the extension logic. To avoid graphical glitches and empty desktops, the extension disables itself until you disconnect the monitor or change the GNOME setting. Enabling this toggle forces the extension to stay active, ignoring this safety check."
+msgstr "Zen Maximize usa gli Spazi di Lavoro di GNOME per nascondere la barra e massimizzare le app. Se colleghi un secondo monitor con \"Spazi di lavoro su tutti i display\" abilitato, la logica va in conflitto. Per evitare bug grafici e scrivanie vuote, l'estensione si spegne da sola finché non stacchi il monitor o cambi l'impostazione di GNOME. Attivando questo interruttore, forzi l'estensione a rimanere accesa ignorando la sicurezza."
+
+msgid "Top Bar Timing"
+msgstr "Tempi della Top Bar"
+
+msgid "Show delay (ms)"
+msgstr "Ritardo comparsa (ms)"
+
+msgid "How long the cursor must stay at the top edge before the bar appears."
+msgstr "Tempo in millisecondi in cui il cursore deve restare sul bordo prima che appaia la barra."
+
+msgid "Hide delay (ms)"
+msgstr "Ritardo scomparsa (ms)"
+
+msgid "How long the bar stays visible after the cursor leaves."
+msgstr "Tempo in millisecondi in cui la barra resta visibile dopo che il cursore è uscito."
+
+msgid "App Bar (Dock)"
+msgstr "App Bar (Dock)"
+
+msgid "These settings control how the hidden dock reappears. Pressure is the default GNOME mechanism: you must push the cursor firmly against the screen edge, rather than just hovering over it."
+msgstr "Queste impostazioni controllano come riappare la dock nascosta. La pressione è il meccanismo predefinito di GNOME: devi spingere il cursore con forza contro il bordo dello schermo, invece di passarci semplicemente sopra."
+
+msgid "Require pressure to show"
+msgstr "Richiedi pressione per mostrare"
+
+msgid "When enabled, you must push the cursor against the edge to reveal the dock (GNOME default behavior). When disabled, the dock appears by simply hovering near the edge."
+msgstr "Se attivo, devi spingere il cursore contro il bordo per far apparire la dock (comportamento predefinito di GNOME). Se disattivato, la dock appare semplicemente passandoci vicino."
+
+msgid "Pressure threshold"
+msgstr "Soglia di pressione"
+
+msgid "Amount of cursor pressure needed against the edge to trigger the dock (default: 100)."
+msgstr "Quantità di pressione del cursore necessaria contro il bordo per attivare la dock (default: 100)."

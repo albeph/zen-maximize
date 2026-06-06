@@ -70,6 +70,14 @@ export function sendToTempWorkspace(win, state, policy, log, options = {}) {
     const monitorIndex = win.get_monitor();
     const monitorConnector = getConnectorForMonitor(monitorIndex);
 
+    if (Meta.prefs_get_workspaces_only_on_primary() || (policy.isMultiMonitorDisabled && policy.isMultiMonitorDisabled())) {
+        const primaryMonitor = global.display.get_primary_monitor();
+        if (monitorIndex !== primaryMonitor) {
+            log(`[ws] ida ignorada "${win.get_title()}" (secondary monitor disabled by settings or workspaces-only-on-primary)`);
+            return;
+        }
+    }
+
     state.inFlight = true;
     state.originWorkspace = originWorkspace;
     state.originIndex = originIndex;
@@ -275,6 +283,12 @@ export function normalizeFixedWorkspaceFullscreenWindows(windowSignals, states, 
 
             if (!isFullscreenState(win))
                 continue;
+
+            if (Meta.prefs_get_workspaces_only_on_primary() || (policy.isMultiMonitorDisabled && policy.isMultiMonitorDisabled())) {
+                const primaryMonitor = global.display.get_primary_monitor();
+                if (win.get_monitor() !== primaryMonitor)
+                    continue;
+            }
 
             const state = getState(states, win);
             if (state.moved || state.inFlight)

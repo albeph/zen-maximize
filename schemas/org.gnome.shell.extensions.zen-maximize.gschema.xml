@@ -7,5 +7,25 @@
       <summary>Extension logic is active</summary>
       <description>If false, the extension pauses its window tracking and UI behaviors.</description>
     </key>
+    <key name="disable-on-secondary-monitors" type="b">
+      <default>false</default>
+      <summary>Disable on secondary monitors</summary>
+      <description>If true, Zen Maximize is completely disabled when multiple monitors are connected.</description>
+    </key>
+    <key name="disable-auto-multi-monitor" type="b">
+      <default>false</default>
+      <summary>Override automatic multi-monitor disable</summary>
+      <description>If true, ignores the GNOME workspace configuration and never automatically disables the extension.</description>
+    </key>
+    <key name="topbar-show-delay" type="i">
+      <default>500</default>
+      <summary>Delay before showing Top Bar</summary>
+      <description>Time in milliseconds the pointer must stay at the top edge before the Top Bar appears.</description>
+    </key>
+    <key name="topbar-hide-delay" type="i">
+      <default>500</default>
+      <summary>Delay before hiding Top Bar</summary>
+      <description>Time in milliseconds to wait before hiding the Top Bar after the pointer leaves.</description>
+    </key>
   </schema>
 </schemalist>

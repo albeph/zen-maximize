@@ -6,6 +6,7 @@
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import Clutter from 'gi://Clutter';
+import Meta from 'gi://Meta';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
@@ -64,7 +65,25 @@ export default class ZenMaximizeExtension extends Extension {
 
         const settings = this.getSettings('org.gnome.shell.extensions.zen-maximize');
 
-        this._policy.isActive = () => settings.get_boolean('is-active');
+        this._policy.isActive = () => {
+            if (!settings.get_boolean('is-active')) return false;
+            
+            const nMonitors = global.display.get_n_monitors();
+
+            if (settings.get_boolean('disable-on-secondary-monitors') && nMonitors > 1) {
+                return false;
+            }
+
+            if (settings.get_boolean('disable-auto-multi-monitor')) return true;
+
+            // Automatically disable the extension if multiple monitors are connected
+            // AND the user has GNOME configured to put workspaces on all displays.
+            if (nMonitors > 1 && !Meta.prefs_get_workspaces_only_on_primary()) {
+                return false;
+            }
+            return true;
+        };
+        this._policy.isMultiMonitorDisabled = () => false; // We no longer use the old per-window logic
 
         this._quickIndicator = new FullscreenIndicator(settings);
         Main.panel.statusArea.quickSettings.addExternalIndicator(this._quickIndicator);
@@ -90,13 +109,16 @@ export default class ZenMaximizeExtension extends Extension {
 
         this._runtime.monitorSignal = Main.layoutManager.connect(
             'monitors-changed',
-            () => onMonitorsChanged(
-                this._runtime.windowSignals,
-                this._runtime.states,
-                (win, state, fromClose) =>
-                    restoreToOrigin(win, state, this._policy, fromClose, m => this._log(m)),
-                m => this._log(m)
-            )
+            () => {
+                this._syncActiveState();
+                onMonitorsChanged(
+                    this._runtime.windowSignals,
+                    this._runtime.states,
+                    (win, state, fromClose) =>
+                        restoreToOrigin(win, state, this._policy, fromClose, m => this._log(m)),
+                    m => this._log(m)
+                );
+            }
         );
 
         try {
@@ -106,23 +128,67 @@ export default class ZenMaximizeExtension extends Extension {
         }
         this._dockWasFixed = false;
         this._dockWasNoAutohideFS = false;
-        this._dockWasPressure = false;
+        this._dockOriginalPressure = null;
+        if (this._dockSettings) {
+            try {
+                if (!this._dockSettings.get_boolean('require-pressure-to-show')) {
+                    this._dockOriginalPressure = false;
+                    this._dockSettings.set_boolean('require-pressure-to-show', true);
+                }
+            } catch (_) {}
+        }
         this._panelTimeoutId = 0;
+
+        const setPanelStruts = (enabled) => {
+            const trackData = Main.layoutManager._trackedActors.find(a => a.actor === Main.layoutManager.panelBox);
+            if (trackData && trackData.affectsStruts !== enabled) {
+                trackData.affectsStruts = enabled;
+                Main.layoutManager._queueUpdateRegions();
+            }
+        };
+
+        const easeAllWindowActors = (translationY, duration) => {
+            const activeWs = global.workspace_manager.get_active_workspace();
+            const wins = activeWs.list_windows();
+            for (const w of wins) {
+                const actor = w.get_compositor_private();
+                if (actor && !w.is_skip_taskbar()) {
+                    if (duration > 0) {
+                        actor.ease({
+                            translation_y: translationY,
+                            duration,
+                            mode: Clutter.AnimationMode.EASE_OUT_QUAD
+                        });
+                    } else {
+                        actor.remove_transition('translation_y');
+                        actor.translation_y = translationY;
+                    }
+                }
+            }
+        };
 
         const hideTopBar = () => {
             if (this._panelTimeoutId) {
                 GLib.Source.remove(this._panelTimeoutId);
                 this._panelTimeoutId = 0;
             }
-            Main.panel.ease({
-                translation_y: -Main.panel.height,
-                opacity: 0,
+            if (this._pointerTrackerId) {
+                GLib.Source.remove(this._pointerTrackerId);
+                this._pointerTrackerId = 0;
+            }
+            if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
+
+            const panelH = Main.layoutManager.panelBox.height;
+
+            // Slide panel up
+            Main.layoutManager.panelBox.ease({
+                translation_y: -panelH,
                 duration: 250,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                onComplete: () => {
-                    Main.panel.hide();
-                }
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD
             });
+
+            // Pull all windows back up to fill entire screen
+            easeAllWindowActors(0, 250);
         };
 
         const showTopBar = () => {
@@ -130,12 +196,70 @@ export default class ZenMaximizeExtension extends Extension {
                 GLib.Source.remove(this._panelTimeoutId);
                 this._panelTimeoutId = 0;
             }
-            Main.panel.show();
-            Main.panel.ease({
+            if (this._pointerTrackerId) {
+                GLib.Source.remove(this._pointerTrackerId);
+                this._pointerTrackerId = 0;
+            }
+
+            const panelH = Main.layoutManager.panelBox.height;
+
+            // Slide panel down into view
+            Main.layoutManager.panelBox.ease({
                 translation_y: 0,
-                opacity: 255,
                 duration: 250,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD
+            });
+
+            // Push all windows down to make room for the panel
+            easeAllWindowActors(panelH, 250);
+
+            if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
+
+            // Start pointer tracker to auto-hide when mouse leaves panel area
+            this._pointerTrackerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
+                let ptrY = -1;
+                try {
+                    const [, y] = global.get_pointer();
+                    ptrY = y;
+                } catch (_) {
+                    return GLib.SOURCE_CONTINUE;
+                }
+
+                if (ptrY < 0) return GLib.SOURCE_CONTINUE;
+
+                const panelHeight = Main.panel.height || 32;
+                const activeWs = global.workspace_manager.get_active_workspace();
+                const isTemp = this._policy.isTempWorkspace(activeWs);
+
+                if (!isTemp) {
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                if (ptrY > panelHeight && !Main.panel.menuManager.activeMenu) {
+                    const hideDelay = settings.get_int('topbar-hide-delay');
+                    if (hideDelay > 0) {
+                        if (!this._panelTimeoutId) {
+                            this._panelTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, hideDelay, () => {
+                                this._panelTimeoutId = 0;
+                                let finalY = 1000;
+                                try { const [, fy] = global.get_pointer(); finalY = fy; } catch(_) {}
+                                if (finalY > panelHeight && !Main.panel.menuManager.activeMenu) {
+                                    hideTopBar();
+                                }
+                                return GLib.SOURCE_REMOVE;
+                            });
+                        }
+                    } else {
+                        hideTopBar();
+                        return GLib.SOURCE_REMOVE;
+                    }
+                } else {
+                    if (this._panelTimeoutId) {
+                        GLib.Source.remove(this._panelTimeoutId);
+                        this._panelTimeoutId = 0;
+                    }
+                }
+                return GLib.SOURCE_CONTINUE;
             });
         };
 
@@ -147,60 +271,65 @@ export default class ZenMaximizeExtension extends Extension {
         });
         Main.layoutManager.addChrome(this._topEdgeTrigger, { affectsStruts: false, trackFullscreen: true });
 
+        this._showTimeoutId = 0;
         this._topEdgeSignal = this._topEdgeTrigger.connect('enter-event', () => {
             const activeWs = global.workspace_manager.get_active_workspace();
             if (this._policy.isTempWorkspace(activeWs)) {
-                showTopBar();
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
-
-        this._panelEnterSignal = Main.panel.connect('enter-event', () => {
-            if (this._panelTimeoutId) {
-                GLib.Source.remove(this._panelTimeoutId);
-                this._panelTimeoutId = 0;
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
-
-        this._panelLeaveSignal = Main.panel.connect('leave-event', () => {
-            const activeWs = global.workspace_manager.get_active_workspace();
-            if (this._policy.isTempWorkspace(activeWs) && !Main.panel.menuManager.activeMenu) {
-                if (!this._panelTimeoutId) {
-                    this._panelTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, TOP_BAR_HIDE_DELAY_MS, () => {
-                        this._panelTimeoutId = 0;
-                        let ptrY = 1000;
-                        try {
-                            const [, y] = global.get_pointer();
-                            ptrY = y;
-                        } catch (_) {}
-                        
-                        const panelHeight = Main.panel.height || 32;
-                        if (ptrY > panelHeight && !Main.panel.menuManager.activeMenu) {
-                            hideTopBar();
-                        }
-                        return GLib.SOURCE_REMOVE;
-                    });
+                const showDelay = settings.get_int('topbar-show-delay');
+                if (showDelay > 0) {
+                    if (!this._showTimeoutId) {
+                        this._showTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, showDelay, () => {
+                            this._showTimeoutId = 0;
+                            showTopBar();
+                            return GLib.SOURCE_REMOVE;
+                        });
+                    }
+                } else {
+                    showTopBar();
                 }
             }
             return Clutter.EVENT_PROPAGATE;
         });
+
+        this._topEdgeLeaveSignal = this._topEdgeTrigger.connect('leave-event', () => {
+            if (this._showTimeoutId) {
+                GLib.Source.remove(this._showTimeoutId);
+                this._showTimeoutId = 0;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+
+
 
         this._policy.updateUI = () => {
             const activeWs = global.workspace_manager.get_active_workspace();
             if (this._policy.isActive && this._policy.isActive() && this._policy.isTempWorkspace(activeWs)) {
-                let ptrY = 1000;
-                try {
-                    const [, y] = global.get_pointer();
-                    ptrY = y;
-                } catch (_) {}
-                
-                const panelHeight = Main.panel.height || 32;
-                if (ptrY > panelHeight) {
-                    hideTopBar();
-                } else {
-                    showTopBar();
-                }
+                setPanelStruts(false);
+                // Instantly hide the panel and ensure all windows fill the screen
+                // No animation to avoid race conditions during workspace transitions
+                if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
+                if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
+                Main.layoutManager.panelBox.remove_transition('translation_y');
+                Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
+                easeAllWindowActors(0, 0);
+                if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
+
+                // Force re-maximize windows that opened already maximized.
+                // Their geometry was calculated with the panel, so it's too short.
+                // A small delay ensures the strut change has propagated.
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+                    try {
+                        const ws = global.workspace_manager.get_active_workspace();
+                        if (!this._policy || !this._policy.isTempWorkspace(ws)) return GLib.SOURCE_REMOVE;
+                        for (const w of ws.list_windows()) {
+                            if (w.maximized_horizontally && w.maximized_vertically && !w.fullscreen) {
+                                w.unmaximize(Meta.MaximizeFlags.BOTH);
+                                w.maximize(Meta.MaximizeFlags.BOTH);
+                            }
+                        }
+                    } catch (_) {}
+                    return GLib.SOURCE_REMOVE;
+                });
                 if (this._dockSettings) {
                     try {
                         if (this._dockSettings.get_boolean('dock-fixed')) {
@@ -211,16 +340,23 @@ export default class ZenMaximizeExtension extends Extension {
                             this._dockWasNoAutohideFS = true;
                             this._dockSettings.set_boolean('autohide-in-fullscreen', true);
                         }
-                        if (this._dockSettings.get_boolean('require-pressure-to-show')) {
-                            this._dockWasPressure = true;
-                            this._dockSettings.set_boolean('require-pressure-to-show', false);
-                        }
                     } catch (e) {
                         this._log(`[ext] dock settings error: ${e}`);
                     }
                 }
             } else {
-                showTopBar();
+                setPanelStruts(true);
+                if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
+                if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
+                if (this._showTimeoutId) { GLib.Source.remove(this._showTimeoutId); this._showTimeoutId = 0; }
+
+                // Clear any translations without animating (so we don't interfere with workspace switch animation)
+                Main.layoutManager.panelBox.remove_transition('translation_y');
+                Main.layoutManager.panelBox.translation_y = 0;
+                easeAllWindowActors(0, 0);
+
+                if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
+
                 if (this._dockSettings) {
                     try {
                         if (this._dockWasFixed) {
@@ -230,10 +366,6 @@ export default class ZenMaximizeExtension extends Extension {
                         if (this._dockWasNoAutohideFS) {
                             this._dockSettings.set_boolean('autohide-in-fullscreen', false);
                             this._dockWasNoAutohideFS = false;
-                        }
-                        if (this._dockWasPressure) {
-                            this._dockSettings.set_boolean('require-pressure-to-show', true);
-                            this._dockWasPressure = false;
                         }
                     } catch (e) {
                         this._log(`[ext] dock settings error: ${e}`);
@@ -247,14 +379,15 @@ export default class ZenMaximizeExtension extends Extension {
             () => this._policy.updateUI()
         );
 
-        settings.connect('changed::is-active', () => {
-            const active = settings.get_boolean('is-active');
+        this._syncActiveState = () => {
+            const active = this._policy.isActive();
             if (!active) {
                 for (const [win, state] of this._runtime.states.entries()) {
                     if (state.moved) {
                         restoreToOrigin(win, state, this._policy, false, m => this._log(m));
                     }
                 }
+                setPanelStruts(true);
                 showTopBar();
             } else {
                 normalizeFixedWorkspaceFullscreenWindows(
@@ -264,7 +397,11 @@ export default class ZenMaximizeExtension extends Extension {
                     m => this._log(m)
                 );
             }
-        });
+        };
+
+        settings.connect('changed::is-active', () => this._syncActiveState());
+        settings.connect('changed::disable-auto-multi-monitor', () => this._syncActiveState());
+        settings.connect('changed::disable-on-secondary-monitors', () => this._syncActiveState());
 
         const initialWs = global.workspace_manager.get_active_workspace();
         if (this._policy.isTempWorkspace(initialWs)) {
@@ -334,9 +471,19 @@ export default class ZenMaximizeExtension extends Extension {
             this._runtime.workspaceSignal = 0;
         }
 
+        if (this._showTimeoutId) {
+            GLib.Source.remove(this._showTimeoutId);
+            this._showTimeoutId = 0;
+        }
+
         if (this._topEdgeSignal && this._topEdgeTrigger) {
             try { this._topEdgeTrigger.disconnect(this._topEdgeSignal); } catch (_) {}
             this._topEdgeSignal = 0;
+        }
+
+        if (this._topEdgeLeaveSignal && this._topEdgeTrigger) {
+            try { this._topEdgeTrigger.disconnect(this._topEdgeLeaveSignal); } catch (_) {}
+            this._topEdgeLeaveSignal = 0;
         }
 
         if (this._topEdgeTrigger) {
@@ -347,14 +494,9 @@ export default class ZenMaximizeExtension extends Extension {
             this._topEdgeTrigger = null;
         }
 
-        if (this._panelEnterSignal) {
-            try { Main.panel.disconnect(this._panelEnterSignal); } catch (_) {}
-            this._panelEnterSignal = 0;
-        }
-
-        if (this._panelLeaveSignal) {
-            try { Main.panel.disconnect(this._panelLeaveSignal); } catch (_) {}
-            this._panelLeaveSignal = 0;
+        if (this._pointerTrackerId) {
+            GLib.Source.remove(this._pointerTrackerId);
+            this._pointerTrackerId = 0;
         }
 
         if (this._panelTimeoutId) {
@@ -370,21 +512,40 @@ export default class ZenMaximizeExtension extends Extension {
                 if (this._dockWasNoAutohideFS) {
                     this._dockSettings.set_boolean('autohide-in-fullscreen', false);
                 }
-                if (this._dockWasPressure) {
-                    this._dockSettings.set_boolean('require-pressure-to-show', true);
+                if (this._dockOriginalPressure === false) {
+                    this._dockSettings.set_boolean('require-pressure-to-show', false);
                 }
             } catch (_) {}
             this._dockWasFixed = false;
             this._dockWasNoAutohideFS = false;
-            this._dockWasPressure = false;
+            this._dockOriginalPressure = null;
         }
 
         try {
+            const trackData = Main.layoutManager._trackedActors.find(a => a.actor === Main.layoutManager.panelBox);
+            if (trackData) {
+                trackData.affectsStruts = true;
+                Main.layoutManager._queueUpdateRegions();
+            }
+            Main.layoutManager.panelBox.remove_transition('translation_y');
+            Main.layoutManager.panelBox.translation_y = 0;
             Main.panel.remove_transition('translation_y');
             Main.panel.remove_transition('opacity');
             Main.panel.translation_y = 0;
             Main.panel.opacity = 255;
-            Main.panel.show();
+
+            // Reset any window actor translations we applied
+            const nWs = global.workspace_manager.get_n_workspaces();
+            for (let i = 0; i < nWs; i++) {
+                const ws = global.workspace_manager.get_workspace_by_index(i);
+                for (const win of ws.list_windows()) {
+                    const actor = win.get_compositor_private();
+                    if (actor && actor.translation_y !== 0) {
+                        actor.remove_transition('translation_y');
+                        actor.translation_y = 0;
+                    }
+                }
+            }
         } catch (_) { }
 
         disposeRuntimeState(this._runtime);

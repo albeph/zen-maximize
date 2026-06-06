@@ -93,7 +93,8 @@ export function isInterestingWindow(win) {
  */
 export function isFullscreenState(win) {
     try {
-        return (win.maximized_horizontally && win.maximized_vertically) || win.fullscreen;
+        if (win.fullscreen) return false;
+        return win.maximized_horizontally && win.maximized_vertically;
     } catch (_) {
         return false;
     }

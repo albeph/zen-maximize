@@ -142,6 +142,21 @@ function evaluateWindow(win, states, windowSignals, policy, log) {
     }
 
     if (!nowFullscreen && wasFullscreen) {
+        // If the window is being dragged (e.g. user pulled the title bar to unmaximize),
+        // wait for the grab to finish before restoring, otherwise the window gets stuck
+        // to the cursor during the workspace switch.
+        const display = global.display;
+        if (display.get_grab_op && display.get_grab_op() !== Meta.GrabOp.NONE) {
+            const grabEndId = display.connect('grab-op-end', (_display, _window, _op) => {
+                display.disconnect(grabEndId);
+                // Re-check: user might have re-maximized during the drag
+                if (!isFullscreenState(win) && state.moved) {
+                    restoreToOrigin(win, state, policy, false, log);
+                }
+            });
+            return;
+        }
+
         restoreToOrigin(win, state, policy, false, log);
     }
 }

@@ -54,6 +54,7 @@ export function cleanupWorkspace(policy, workspace, log) {
     try {
         policy.unregisterTempWorkspace(workspace);
         policy.syncConfiguredWorkspaceCount();
+        if (policy.updateUI) policy.updateUI();
         log(`[ws] temp unregistered ws:${index}`);
     } catch (e) {
         const message = e?.stack ?? e?.message ?? String(e);

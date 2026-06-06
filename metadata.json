@@ -8,8 +8,10 @@
     "46",
     "47",
     "48",
-    "49"
+    "49",
+    "50"
   ],
   "url": "https://github.com/albeph/zen-maximize",
-  "settings-schema": "org.gnome.shell.extensions.zen-maximize"
+  "settings-schema": "org.gnome.shell.extensions.zen-maximize",
+  "gettext-domain": "zen-maximize@albeph"
 }
