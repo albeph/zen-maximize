@@ -110,6 +110,7 @@ export default class ZenMaximizeExtension extends Extension {
         this._runtime.monitorSignal = Main.layoutManager.connect(
             'monitors-changed',
             () => {
+                if (Main.sessionMode.isLocked) return;
                 this._syncActiveState();
                 onMonitorsChanged(
                     this._runtime.windowSignals,
@@ -120,6 +121,19 @@ export default class ZenMaximizeExtension extends Extension {
                 );
             }
         );
+
+        this._sessionModeSignal = Main.sessionMode.connect('updated', () => {
+            if (!Main.sessionMode.isLocked) {
+                this._syncActiveState();
+                onMonitorsChanged(
+                    this._runtime.windowSignals,
+                    this._runtime.states,
+                    (win, state, fromClose) =>
+                        restoreToOrigin(win, state, this._policy, fromClose, m => this._log(m)),
+                    m => this._log(m)
+                );
+            }
+        });
 
         try {
             this._dockSettings = new Gio.Settings({ schema_id: 'org.gnome.shell.extensions.dash-to-dock' });
@@ -305,22 +319,13 @@ export default class ZenMaximizeExtension extends Extension {
                     if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
                     if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
 
-                    let ptrY = -1;
-                    try { const [, y] = global.get_pointer(); ptrY = y; } catch (_) {}
-                    const panelHeight = Main.panel.height || 32;
-
-                    if (ptrY >= 0 && ptrY <= panelHeight) {
-                        Main.layoutManager.panelBox.remove_transition('translation_y');
-                        Main.layoutManager.panelBox.translation_y = 0;
-                        easeAllWindowActors(panelHeight, 0);
-                        if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
-                        showTopBar();
-                    } else {
-                        Main.layoutManager.panelBox.remove_transition('translation_y');
-                        Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
-                        easeAllWindowActors(0, 0);
-                        if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
-                    }
+                    // Always hide the panel instantly when entering a Zen workspace.
+                    // Relying on global.get_pointer() during workspace switch or unlock is dangerous
+                    // as it can return [0, 0] and incorrectly trigger the hover state.
+                    Main.layoutManager.panelBox.remove_transition('translation_y');
+                    Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
+                    easeAllWindowActors(0, 0);
+                    if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
                 }
             } else {
                 if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
@@ -464,6 +469,13 @@ export default class ZenMaximizeExtension extends Extension {
                 global.workspace_manager.disconnect(this._runtime.workspaceSignal);
             } catch (_) { }
             this._runtime.workspaceSignal = 0;
+        }
+
+        if (this._sessionModeSignal) {
+            try {
+                Main.sessionMode.disconnect(this._sessionModeSignal);
+            } catch (_) { }
+            this._sessionModeSignal = 0;
         }
 
         if (this._showTimeoutId) {

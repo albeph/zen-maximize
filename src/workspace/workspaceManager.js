@@ -278,8 +278,7 @@ export function normalizeFixedWorkspaceFullscreenWindows(windowSignals, states, 
                 continue;
 
             const ws = win.get_workspace();
-            if (!policy.isFixedWorkspace(ws))
-                continue;
+            const isFixed = policy.isFixedWorkspace(ws);
 
             if (!isFullscreenState(win))
                 continue;
@@ -293,6 +292,30 @@ export function normalizeFixedWorkspaceFullscreenWindows(windowSignals, states, 
             const state = getState(states, win);
             if (state.moved || state.inFlight)
                 continue;
+
+            if (!isFixed) {
+                // If the window is already on a dynamic workspace, check if it's alone.
+                // This happens when the device wakes up from sleep and the extension restarts,
+                // leaving previously-managed Zen workspaces orphaned.
+                let isAlone = true;
+                for (const w of ws.list_windows()) {
+                    if (w !== win && isInterestingWindow(w) && !w.is_on_all_workspaces()) {
+                        isAlone = false;
+                        break;
+                    }
+                }
+                if (isAlone) {
+                    policy.registerTempWorkspace(ws);
+                    state.tempWorkspace = ws;
+                    state.moved = true;
+                    state.originWorkspace = policy.getFixedWorkspaceForNewWindows();
+                    log(`[ws] startup adopta orfano "${win.get_title()}" en ws:${ws.index()}`);
+                    if (policy.updateUI) policy.updateUI();
+                }
+                continue;
+            }
+
+
 
             log(`[ws] startup normaliza "${win.get_title()}" grande en fijo ws:${ws.index()} → temp`);
             sendToTempWorkspace(win, state, policy, log, { follow: false, focus: false });

@@ -5,6 +5,7 @@
 
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import { DEBOUNCE_MS } from '../core/constants.js';
 
@@ -93,12 +94,15 @@ function onGeometryChanged(win, states) {
     rememberNormalGeometry(win, state);
 }
 
+
 /**
  * Anti-flicker debouncer routing rapid OS-level `size-changed` assertions
  * into a solid evaluation of whether a Fullscreen is necessary.
  * @private
  */
 function queueEvaluate(win, states, windowSignals, policy, log) {
+    if (Main.sessionMode.isLocked) return;
+
     const state = getState(states, win);
 
     if (state.timeoutId)
@@ -106,7 +110,10 @@ function queueEvaluate(win, states, windowSignals, policy, log) {
 
     state.timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, DEBOUNCE_MS, () => {
         state.timeoutId = 0;
-        evaluateWindow(win, states, windowSignals, policy, log);
+        // Check again inside the timeout just in case the device locked during the debounce
+        if (!Main.sessionMode.isLocked) {
+            evaluateWindow(win, states, windowSignals, policy, log);
+        }
         return GLib.SOURCE_REMOVE;
     });
 }
