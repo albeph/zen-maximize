@@ -305,14 +305,30 @@ export default class ZenMaximizeExtension extends Extension {
             const activeWs = global.workspace_manager.get_active_workspace();
             if (this._policy.isActive && this._policy.isActive() && this._policy.isTempWorkspace(activeWs)) {
                 setPanelStruts(false);
-                // Instantly hide the panel and ensure all windows fill the screen
-                // No animation to avoid race conditions during workspace transitions
+                // Clear any pending timers
                 if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
                 if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
-                Main.layoutManager.panelBox.remove_transition('translation_y');
-                Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
-                easeAllWindowActors(0, 0);
-                if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
+                if (this._showTimeoutId) { GLib.Source.remove(this._showTimeoutId); this._showTimeoutId = 0; }
+
+                // Check if the mouse is currently at the top edge
+                let ptrY = -1;
+                try { const [, y] = global.get_pointer(); ptrY = y; } catch (_) {}
+                const panelHeight = Main.panel.height || 32;
+
+                if (ptrY >= 0 && ptrY <= panelHeight) {
+                    // Mouse is on the panel — keep it visible and start the tracker
+                    Main.layoutManager.panelBox.remove_transition('translation_y');
+                    Main.layoutManager.panelBox.translation_y = 0;
+                    easeAllWindowActors(panelHeight, 0);
+                    if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
+                    showTopBar();
+                } else {
+                    // Mouse is away — hide the panel instantly
+                    Main.layoutManager.panelBox.remove_transition('translation_y');
+                    Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
+                    easeAllWindowActors(0, 0);
+                    if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
+                }
 
                 // Force re-maximize windows that opened already maximized.
                 // Their geometry was calculated with the panel, so it's too short.
