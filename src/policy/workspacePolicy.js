@@ -54,6 +54,15 @@ export class WorkspacePolicy {
     }
 
     /**
+     * Checks if any temporary workspaces currently exist.
+     * @returns {boolean} True if at least one temp workspace is registered.
+     */
+    hasAnyTempWorkspace() {
+        this._pruneTempWorkspaces();
+        return this._tempWorkspaces.size > 0;
+    }
+
+    /**
      * Memorizes an ephemeral dimensional ID logic preventing accidental early garbage collection.
      * @param {Meta.Workspace} workspace - Memory footprint target.
      */

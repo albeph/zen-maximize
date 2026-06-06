@@ -294,56 +294,49 @@ export default class ZenMaximizeExtension extends Extension {
 
         this._policy.updateUI = () => {
             const activeWs = global.workspace_manager.get_active_workspace();
-            if (this._policy.isActive && this._policy.isActive() && this._policy.isTempWorkspace(activeWs)) {
-                setPanelStruts(false);
-                // Clear any pending timers
+            const isOnZen = this._policy.isActive && this._policy.isActive() && this._policy.isTempWorkspace(activeWs);
+
+            // Hide/Show the panel VISUALLY instantly so it matches the workspace switch
+            if (isOnZen) {
                 if (this._showTimeoutId) { GLib.Source.remove(this._showTimeoutId); this._showTimeoutId = 0; }
-
-                // If the panel is already visible with an active pointer tracker,
-                // don't reset it — the user is actively using the panel (e.g. scrolling).
                 const panelAlreadyVisible = this._pointerTrackerId && Main.layoutManager.panelBox.translation_y === 0;
-
+                
                 if (!panelAlreadyVisible) {
                     if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
                     if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
 
-                    // Check if the mouse is currently at the top edge
                     let ptrY = -1;
                     try { const [, y] = global.get_pointer(); ptrY = y; } catch (_) {}
                     const panelHeight = Main.panel.height || 32;
 
                     if (ptrY >= 0 && ptrY <= panelHeight) {
-                        // Mouse is on the panel — keep it visible and start the tracker
                         Main.layoutManager.panelBox.remove_transition('translation_y');
                         Main.layoutManager.panelBox.translation_y = 0;
                         easeAllWindowActors(panelHeight, 0);
                         if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
                         showTopBar();
                     } else {
-                        // Mouse is away — hide the panel instantly
                         Main.layoutManager.panelBox.remove_transition('translation_y');
                         Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
                         easeAllWindowActors(0, 0);
                         if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
                     }
                 }
+            } else {
+                if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
+                if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
+                if (this._showTimeoutId) { GLib.Source.remove(this._showTimeoutId); this._showTimeoutId = 0; }
 
-                // Force re-maximize windows that opened already maximized.
-                // Their geometry was calculated with the panel, so it's too short.
-                // A small delay ensures the strut change has propagated.
-                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
-                    try {
-                        const ws = global.workspace_manager.get_active_workspace();
-                        if (!this._policy || !this._policy.isTempWorkspace(ws)) return GLib.SOURCE_REMOVE;
-                        for (const w of ws.list_windows()) {
-                            if (w.maximized_horizontally && w.maximized_vertically && !w.fullscreen) {
-                                w.unmaximize(Meta.MaximizeFlags.BOTH);
-                                w.maximize(Meta.MaximizeFlags.BOTH);
-                            }
-                        }
-                    } catch (_) {}
-                    return GLib.SOURCE_REMOVE;
-                });
+                Main.layoutManager.panelBox.remove_transition('translation_y');
+                Main.layoutManager.panelBox.translation_y = 0;
+                easeAllWindowActors(0, 0);
+                if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
+            }
+
+            // Execute strut recalculation and dock settings synchronously.
+            setPanelStruts(!isOnZen);
+
+            if (isOnZen) {
                 if (this._dockSettings) {
                     try {
                         if (this._dockSettings.get_boolean('dock-fixed')) {
@@ -359,18 +352,6 @@ export default class ZenMaximizeExtension extends Extension {
                     }
                 }
             } else {
-                setPanelStruts(true);
-                if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
-                if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
-                if (this._showTimeoutId) { GLib.Source.remove(this._showTimeoutId); this._showTimeoutId = 0; }
-
-                // Clear any translations without animating (so we don't interfere with workspace switch animation)
-                Main.layoutManager.panelBox.remove_transition('translation_y');
-                Main.layoutManager.panelBox.translation_y = 0;
-                easeAllWindowActors(0, 0);
-
-                if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
-
                 if (this._dockSettings) {
                     try {
                         if (this._dockWasFixed) {
