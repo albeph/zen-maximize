@@ -106,7 +106,7 @@ export default class ZenMaximizePreferences extends ExtensionPreferences {
             const pressureToggle = new Gtk.Switch({
                 valign: Gtk.Align.CENTER,
             });
-            dockSettings.bind('require-pressure-to-show', pressureToggle, 'active', Gio.SettingsBindFlags.DEFAULT);
+            settings.bind('dock-require-pressure-to-show', pressureToggle, 'active', Gio.SettingsBindFlags.DEFAULT);
             pressureToggleRow.add_suffix(pressureToggle);
             pressureToggleRow.activatable_widget = pressureToggle;
             dockGroup.add(pressureToggleRow);
@@ -114,19 +114,25 @@ export default class ZenMaximizePreferences extends ExtensionPreferences {
             const pressureThresholdRow = new Adw.SpinRow({
                 title: _('Pressure threshold'),
                 subtitle: _('Amount of cursor pressure needed against the edge to trigger the dock (default: 100).'),
-                sensitive: dockSettings.get_boolean('require-pressure-to-show'),
+                sensitive: settings.get_boolean('dock-require-pressure-to-show'),
                 adjustment: new Gtk.Adjustment({
                     lower: 0,
                     upper: 500,
                     step_increment: 10,
                 }),
             });
-            dockSettings.bind('pressure-threshold', pressureThresholdRow, 'value', Gio.SettingsBindFlags.DEFAULT);
+            settings.bind('dock-pressure-threshold', pressureThresholdRow, 'value', Gio.SettingsBindFlags.DEFAULT);
             dockGroup.add(pressureThresholdRow);
 
-            // Disable threshold spinner when pressure is not required
-            dockSettings.connect('changed::require-pressure-to-show', () => {
-                pressureThresholdRow.sensitive = dockSettings.get_boolean('require-pressure-to-show');
+            // Disable threshold spinner when pressure is not required and push to dock
+            settings.connect('changed::dock-require-pressure-to-show', () => {
+                const required = settings.get_boolean('dock-require-pressure-to-show');
+                pressureThresholdRow.sensitive = required;
+                dockSettings.set_boolean('require-pressure-to-show', required);
+            });
+            
+            settings.connect('changed::dock-pressure-threshold', () => {
+                dockSettings.set_int('pressure-threshold', settings.get_int('dock-pressure-threshold'));
             });
 
             page.add(dockGroup);

@@ -37,6 +37,7 @@ export default class ZenMaximizeExtension extends Extension {
         this._log = createLogger(this.metadata.uuid);
         this._runtime = createRuntimeState();
         this._policy = new WorkspacePolicy(this._log);
+        this._isStartingUp = true;
 
         this._runtime.startupTimeoutId = GLib.timeout_add(
             GLib.PRIORITY_DEFAULT,
@@ -137,6 +138,8 @@ export default class ZenMaximizeExtension extends Extension {
 
         try {
             this._dockSettings = new Gio.Settings({ schema_id: 'org.gnome.shell.extensions.dash-to-dock' });
+            this._dockSettings.set_boolean('require-pressure-to-show', settings.get_boolean('dock-require-pressure-to-show'));
+            this._dockSettings.set_int('pressure-threshold', settings.get_int('dock-pressure-threshold'));
         } catch (e) {
             this._dockSettings = null;
         }
@@ -319,13 +322,26 @@ export default class ZenMaximizeExtension extends Extension {
                     if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
                     if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
 
-                    // Always hide the panel instantly when entering a Zen workspace.
-                    // Relying on global.get_pointer() during workspace switch or unlock is dangerous
-                    // as it can return [0, 0] and incorrectly trigger the hover state.
-                    Main.layoutManager.panelBox.remove_transition('translation_y');
-                    Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
-                    easeAllWindowActors(0, 0);
-                    if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
+                    let ptrY = -1;
+                    if (!this._isStartingUp) {
+                        try { const [, y] = global.get_pointer(); ptrY = y; } catch (_) {}
+                    }
+                    const panelHeight = Main.panel.height || 32;
+
+                    if (ptrY >= 0 && ptrY <= panelHeight) {
+                        // Mouse is on the panel — keep it visible and start the tracker
+                        Main.layoutManager.panelBox.remove_transition('translation_y');
+                        Main.layoutManager.panelBox.translation_y = 0;
+                        easeAllWindowActors(panelHeight, 0);
+                        if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = false;
+                        showTopBar();
+                    } else {
+                        // Mouse is away or we are starting up — hide the panel instantly
+                        Main.layoutManager.panelBox.remove_transition('translation_y');
+                        Main.layoutManager.panelBox.translation_y = -Main.layoutManager.panelBox.height;
+                        easeAllWindowActors(0, 0);
+                        if (this._topEdgeTrigger) this._topEdgeTrigger.reactive = true;
+                    }
                 }
             } else {
                 if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
@@ -426,6 +442,7 @@ export default class ZenMaximizeExtension extends Extension {
             m => this._log(m)
         );
 
+        this._isStartingUp = false;
         this._log('[ext] activada');
     }
 

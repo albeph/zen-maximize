@@ -27,5 +27,15 @@
       <summary>Delay before hiding Top Bar</summary>
       <description>Time in milliseconds to wait before hiding the Top Bar after the pointer leaves.</description>
     </key>
+    <key name="dock-require-pressure-to-show" type="b">
+      <default>true</default>
+      <summary>Require pressure to show dock</summary>
+      <description>Persisted override for Ubuntu Dock/Dash to Dock pressure behavior to prevent it from resetting on boot.</description>
+    </key>
+    <key name="dock-pressure-threshold" type="i">
+      <default>100</default>
+      <summary>Dock pressure threshold</summary>
+      <description>Persisted threshold value.</description>
+    </key>
   </schema>
 </schemalist>
