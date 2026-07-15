@@ -1,7 +1,7 @@
 {
   "uuid": "zen-maximize@albeph",
   "name": "Zen Maximize",
-  "version": "1.1.2",
+  "version": "1.1.4",
   "author": "albeph",
   "description": "Automatically moves maximized applications to their own dedicated workspaces to provide a distraction-free, full-screen experience. Un-maximizing seamlessly restores the application to its original workspace. Integrates perfectly with GNOME's native dynamic workspaces.",
   "shell-version": [

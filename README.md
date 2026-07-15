@@ -22,25 +22,31 @@ Inspired by how macOS elegantly manages full-screen applications, this extension
 
 ## ⚡ Quick Start & Installation
 
-To easily install the extension from the source code, simply clone the repository and compile the schemas.
+To easily install or update the extension from the source code:
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/albeph/zen-maximize ~/.local/share/gnome-shell/extensions/zen-maximize@albeph
-   cd ~/.local/share/gnome-shell/extensions/zen-maximize@albeph
+   git clone https://github.com/albeph/zen-maximize
+   cd zen-maximize
    ```
-2. **Compile the settings schemas:**
+2. **Run the installation script:**
+   This script copies the files to your GNOME extensions folder and automatically compiles the settings schemas:
    ```bash
-   glib-compile-schemas schemas/
+   bash install.sh
    ```
 3. **Restart GNOME Shell:**
    * **Wayland:** Log out of your session and log back in.
    * **X11:** Press `Alt+F2`, type `r`, and hit `Enter`.
 4. **Enable the Extension:**
-   Use the GNOME Extensions App or the terminal:
+   Use the GNOME Extensions App (or Extension Manager) or run the following terminal command:
    ```bash
    gnome-extensions enable zen-maximize@albeph
    ```
+
+To uninstall the extension, simply run:
+```bash
+bash install.sh --remove
+```
 ---
 
 ## ✨ Features

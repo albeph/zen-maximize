@@ -240,41 +240,63 @@ function onWorkspaceChanged(win, states, policy, log) {
     if (state.tempWorkspace && currentWorkspace === state.tempWorkspace)
         return;
 
+    // Check if the window was shifted automatically (due to workspace insertion/deletion)
+    // or moved manually by the user. If it was shifted automatically, it won't be the focused window.
+    const focusedWin = global.display.focus_window;
+    const isManual = focusedWin && focusedWin.get_id() === win.get_id();
+    if (!isManual) {
+        log(`[sig] "${win.get_title()}" shifted automatically to ws:${currentWorkspace.index()} → updating temp workspace`);
+        const oldTempWs = state.tempWorkspace;
+        if (oldTempWs) {
+            policy.unregisterTempWorkspace(oldTempWs);
+        }
+        policy.registerTempWorkspace(currentWorkspace);
+        state.tempWorkspace = currentWorkspace;
+        state.originWorkspace = currentWorkspace;
+        state.originIndex = currentWorkspace.index();
+        if (policy.updateUI) policy.updateUI();
+        return;
+    }
+
     log(`[sig] "${win.get_title()}" moved manually to ws:${currentWorkspace.index()}`);
 
     // Clean up the old temp workspace
-    const oldTempWs = state.tempWorkspace;
-    cleanupAfterRestore(state, {
-        isTempWorkspace: ws => ws === oldTempWs,
-        unregisterTempWorkspace: () => {},
-        getFixedWorkspaceCount: () => 1,
-        isFixedWorkspace: () => false,
-        syncConfiguredWorkspaceCount: () => {},
-    }, log);
+    cleanupAfterRestore(state, policy, log);
 
     // If the window is still maximized, decide what to do on the new workspace
     if (isFullscreenState(win)) {
-        const otherWindows = currentWorkspace.list_windows().filter(w =>
-            w !== win && isInterestingWindow(w) && !w.is_on_all_workspaces()
-        );
-
-        if (otherWindows.length > 0) {
-            // Destination has other apps → unmaximize (restore to floating)
-            log(`[sig] "${win.get_title()}" destination has ${otherWindows.length} window(s) → unmaximizing`);
-            try {
-                win.unmaximize(Meta.MaximizeFlags.BOTH);
-            } catch (_) {}
-        } else {
-            // Destination is empty → re-enter Zen mode
-            log(`[sig] "${win.get_title()}" destination is empty → re-entering Zen`);
-            state.lastFullscreen = false; // Reset so evaluateWindow detects the transition
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
-                if (isFullscreenState(win)) {
-                    sendToTempWorkspace(win, state, policy, log);
-                }
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+            if (!isFullscreenState(win))
                 return GLib.SOURCE_REMOVE;
+
+            const curWs = win.get_workspace();
+            if (!curWs)
+                return GLib.SOURCE_REMOVE;
+
+            const otherWindows = curWs.list_windows().filter(w => {
+                try {
+                    return w.get_id() !== win.get_id() && isInterestingWindow(w) && !w.is_on_all_workspaces();
+                } catch (_) {
+                    return w !== win && isInterestingWindow(w) && !w.is_on_all_workspaces();
+                }
             });
-        }
+
+            log(`[DEBUG] win="${win.get_title()}" curWs=${curWs.index()} list_windows=[${curWs.list_windows().map(w => { try { return w.get_title(); } catch (_) { return "unknown"; } }).join(', ')}] otherWindows=[${otherWindows.map(w => { try { return w.get_title(); } catch (_) { return "unknown"; } }).join(', ')}]`);
+
+            if (otherWindows.length > 0) {
+                // Destination has other apps → unmaximize (restore to floating)
+                log(`[sig] "${win.get_title()}" destination has ${otherWindows.length} window(s) → unmaximizing`);
+                try {
+                    win.unmaximize(Meta.MaximizeFlags.BOTH);
+                } catch (_) {}
+            } else {
+                // Destination is empty → re-enter Zen mode
+                log(`[sig] "${win.get_title()}" destination is empty → re-entering Zen`);
+                state.lastFullscreen = false; // Reset so evaluateWindow detects the transition
+                sendToTempWorkspace(win, state, policy, log);
+            }
+            return GLib.SOURCE_REMOVE;
+        });
     }
 }
 

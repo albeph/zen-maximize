@@ -311,13 +311,18 @@ export default class ZenMaximizeExtension extends Extension {
 
         this._policy.updateUI = () => {
             const activeWs = global.workspace_manager.get_active_workspace();
-            const isOnZen = this._policy.isActive && this._policy.isActive() && this._policy.isTempWorkspace(activeWs);
+            const isTemp = this._policy.isTempWorkspace(activeWs);
+            const isOnZen = this._policy.isActive && this._policy.isActive() && isTemp;
+
+            // Log active workspace details
+            const tempIndices = Array.from(this._policy._tempWorkspaces).map(ws => ws.index()).join(', ');
+            this._log(`[debug-ui] activeWs=${activeWs?.index()} isTemp=${isTemp} isOnZen=${isOnZen} tempWorkspaces=[${tempIndices}]`);
 
             // Hide/Show the panel VISUALLY instantly so it matches the workspace switch
             if (isOnZen) {
                 if (this._showTimeoutId) { GLib.Source.remove(this._showTimeoutId); this._showTimeoutId = 0; }
                 const panelAlreadyVisible = this._pointerTrackerId && Main.layoutManager.panelBox.translation_y === 0;
-                
+
                 if (!panelAlreadyVisible) {
                     if (this._panelTimeoutId) { GLib.Source.remove(this._panelTimeoutId); this._panelTimeoutId = 0; }
                     if (this._pointerTrackerId) { GLib.Source.remove(this._pointerTrackerId); this._pointerTrackerId = 0; }
@@ -393,6 +398,22 @@ export default class ZenMaximizeExtension extends Extension {
         this._runtime.workspaceSignal = global.workspace_manager.connect(
             'active-workspace-changed',
             () => this._policy.updateUI()
+        );
+
+        // Also listen for workspace additions/removals. When GNOME inserts a new workspace
+        // at the same index as the temp workspace (pushing the temp to a higher index),
+        // 'active-workspace-changed' may not fire because the active-workspace index stays
+        // the same even though the workspace object beneath the cursor has changed.
+        // This secondary listener triggers a re-evaluation after the layout settles.
+        this._runtime.workspaceCountSignal = global.workspace_manager.connect(
+            'notify::n-workspaces',
+            () => {
+                // Defer so Mutter has time to finish reordering before we read the state.
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
+                    this._policy.updateUI();
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
         );
 
         this._syncActiveState = () => {
@@ -488,6 +509,13 @@ export default class ZenMaximizeExtension extends Extension {
             this._runtime.workspaceSignal = 0;
         }
 
+        if (this._runtime.workspaceCountSignal) {
+            try {
+                global.workspace_manager.disconnect(this._runtime.workspaceCountSignal);
+            } catch (_) { }
+            this._runtime.workspaceCountSignal = 0;
+        }
+
         if (this._sessionModeSignal) {
             try {
                 Main.sessionMode.disconnect(this._sessionModeSignal);
@@ -499,6 +527,7 @@ export default class ZenMaximizeExtension extends Extension {
             GLib.Source.remove(this._showTimeoutId);
             this._showTimeoutId = 0;
         }
+
 
         if (this._topEdgeSignal && this._topEdgeTrigger) {
             try { this._topEdgeTrigger.disconnect(this._topEdgeSignal); } catch (_) {}
