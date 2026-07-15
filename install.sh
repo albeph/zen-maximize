@@ -59,8 +59,11 @@ do_remove() {
 # Installazione / aggiornamento
 # ──────────────────────────────────────────────
 do_install() {
-    local version
-    version="$(grep '"version"' "$SCRIPT_DIR/metadata.json" | grep -oP '[\d.]+')"
+    if grep -q '"version-name"' "$SCRIPT_DIR/metadata.json"; then
+        version="$(grep '"version-name"' "$SCRIPT_DIR/metadata.json" | grep -oP '(?<="version-name": ")[^"]+')"
+    else
+        version="$(grep '"version"' "$SCRIPT_DIR/metadata.json" | grep -oP '(?<="version": )[^,]+' | tr -d '" ')"
+    fi
 
     info "Installazione di Zen Maximize v${version} …"
     info "Destinazione: $DEST_DIR"

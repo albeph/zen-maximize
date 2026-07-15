@@ -140,6 +140,18 @@ export default class ZenMaximizePreferences extends ExtensionPreferences {
             // Dash to Dock / Ubuntu Dock not installed, skip
         }
 
+        const versionGroup = new Adw.PreferencesGroup();
+        const versionStr = this.metadata['version-name'] ?? this.metadata.version;
+        const versionLabel = new Gtk.Label({
+            label: `<span size="small" alpha="55%">Version ${versionStr}</span>`,
+            use_markup: true,
+            halign: Gtk.Align.CENTER,
+            margin_top: 24,
+            margin_bottom: 12,
+        });
+        versionGroup.add(versionLabel);
+        page.add(versionGroup);
+
         window.add(page);
     }
 }
